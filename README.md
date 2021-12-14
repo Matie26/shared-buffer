@@ -1,1 +1,1 @@
-# shared-buffer
+# POSIX shared LIFO/FIFO buffer with semaphores
