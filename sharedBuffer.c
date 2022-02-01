@@ -1,54 +1,36 @@
-/*
- * gcc sharedBuffer.c -o buffer -lpthread -lrt
- */
-
 #include <semaphore.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define LIFO 1
-#define FIFO 2
+#define LIFO 0
+#define FIFO 1
 
 struct shared_buffer {
     size_t capacity;
     size_t write;
     size_t read;
-    int8_t mode;  // 1 = lifo,  2 = fifo
+    int8_t mode;
     sem_t mutex;
     sem_t empty;
     sem_t full;
     int* buf;
 };
 
-int privatewrite(struct shared_buffer* buffer, int data) {
+void privatewrite(struct shared_buffer* buffer, int data) {
     int* p = buffer->buf;
-    if (buffer->write == buffer->capacity - 1) {
-        switch (buffer->mode) {
-            case LIFO:
-                printf("Writing to full buffer!\n");
-                return 1;
-            case FIFO:
-                buffer->write = 0;
-                break;
-        }
-    } else {
-        buffer->write++;
+    if (buffer->mode == FIFO && buffer->write == buffer->capacity - 1) {
+        buffer->write = -1;
     }
-    p += buffer->write;
+    p += ++buffer->write;
     *p = data;
-    return 0;
 }
 
 int privateread(struct shared_buffer* buffer) {
     int* p = buffer->buf;
     switch (buffer->mode) {
         case LIFO:
-            if (buffer->write == -1) {
-                printf("Reading empty buffer!\n");
-                return 1;
-            }
             p += buffer->write--;
             break;
         case FIFO:
@@ -84,7 +66,7 @@ struct shared_buffer* newSharedBuffer(size_t size, int8_t mode) {
 void printSharedBuffer(struct shared_buffer* buffer, size_t nOfElements) {
     sem_wait(&(buffer->mutex));
     for (size_t i = 0; i < nOfElements; i++) {
-        printf("%d element: %d", i, buffer->buf[i]);
+        printf("%ld element: %d", i, buffer->buf[i]);
         if (buffer->mode == LIFO) {
             if (buffer->write == i) printf(" <-- write (read)");
         } else {
@@ -101,7 +83,7 @@ void printSharedBuffer(struct shared_buffer* buffer, size_t nOfElements) {
     sem_post(&(buffer->mutex));
 }
 
-int addItems(struct shared_buffer* buffer, int* items, size_t numberOfItems) {
+void addItems(struct shared_buffer* buffer, int* items, size_t numberOfItems) {
     for (size_t i = 0; i < numberOfItems; i++) {
         sem_wait(&(buffer->empty));
         sem_wait(&(buffer->mutex));
@@ -124,8 +106,8 @@ int* getItems(struct shared_buffer* buffer, size_t numberOfItems) {
 }
 
 int checkForDups(int* data, size_t size) {
-    for (int i = 0; i < size - 1; i++) {
-        for (int j = i + 1; j < size; j++) {
+    for (size_t i = 0; i < size - 1; i++) {
+        for (size_t j = i + 1; j < size; j++) {
             if (*(data + i) == *(data + j)) return 1;
         }
     }
@@ -139,7 +121,7 @@ void producer(struct shared_buffer* buffer, size_t dataCount, int producerId) {
         *(data + i) = i * 100 + producerId;
     }
     addItems(buffer, data, dataCount);
-    printf("Producer %d finished [+] \n", producerId);
+    printf("[+] Producer %d finished\n", producerId);
 }
 
 int* consumer(struct shared_buffer* buffer, size_t numberOfItems,
@@ -153,8 +135,7 @@ int* consumer(struct shared_buffer* buffer, size_t numberOfItems,
         }
         printf("\n");
     }
-
-    printf("Consumer %d finished [+]", consumerId);
+    printf("[+] Consumer %d finished:", consumerId);
     if (checkForDups(p, numberOfItems))
         printf(" DUPLICATES FOUND!\n");
     else
@@ -173,24 +154,32 @@ void sharedBufferTest(struct shared_buffer* buffer) {
             abort();
         } else if (pids[i] == 0) {
             if (i % 2 == 0) {
-                producer(buffer, n/5, i);
+                producer(buffer, n / 5, i);
             } else {
-                data = consumer(buffer, n/5, i, 0);
-                addItems(temp, data, n/5);
+                data = consumer(buffer, n / 5, i, 0);
+                addItems(temp, data, n / 5);
             }
             exit(0);
         }
     }
     sleep(3);
     data = getItems(temp, n);
-    if(checkForDups(data, n)) printf("\nDuplicates found!\n");
-    else printf("\nNo duplicates found!\n");
+    if (checkForDups(data, n))
+        printf("\nDuplicates found!\n");
+    else
+        printf("\nNo duplicates found!\n");
 }
 
 int main(int argc, char* argv[]) {
+    if (argc != 3) {
+        printf(
+            "Expected 2 arguemnts: ./sharedBuffer bufferSize bufferMode "
+            "[0:LIFO 1:FIFO]\n");
+        return 1;
+    }
     int bufferSize = atoi(argv[1]);
-    int modeChoice = atoi(argv[2]);  // 1-lifo  2-fifo
-    struct shared_buffer* buffer = newSharedBuffer(bufferSize, modeChoice);
+    int bufferMode = atoi(argv[2]);
+    struct shared_buffer* buffer = newSharedBuffer(bufferSize, bufferMode);
     sharedBufferTest(buffer);
     return 0;
 }
