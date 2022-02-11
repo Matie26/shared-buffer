@@ -4,4 +4,4 @@ Shared memory problem, writing to full buffer and reading from empty buffer are 
 In order to test this solution 5 producers and 5 consumers are created and their task is to write/read given amount of data to/from the same buffer. When all of them finish, data read by consumers is written to new buffer (this time they act as producers) which is later checked for any duplicates. 
 
 ### Usage:
-```./sharedBuffer [bufferSize] [bufferMode (0:LIFO 1:FIFO)]```
+```./sharedBuffer [buffer_size] [buffer_mode (0:LIFO 1:FIFO)]```
